@@ -1,6 +1,6 @@
 import math
 import numpy as np
-
+import copy
 # MIT License
 #
 # Copyright (c) 2018 Yisroel mirsky
@@ -40,6 +40,7 @@ cdef class incStat:
     cdef double cur_var
     cdef double cur_std
     cdef list covs
+    cdef public dict Covs
 
     def __init__(self, double Lambda, str ID, double init_time=0, int isTypeDiff=False):  # timestamp is creation time
         self.ID = ID
@@ -53,7 +54,7 @@ cdef class incStat:
         self.cur_var = np.nan
         self.cur_std = np.nan
         self.covs = [] # a list of incStat_covs (references) with relate to this incStat
-
+        self.Covs = dict()
     cdef insert(self, double v, double t=0):  # v is a scalar, t is v's arrival the timestamp
         if self.isTypeDiff:
             if t - self.lastTimestamp > 0:
@@ -71,10 +72,11 @@ cdef class incStat:
         self.cur_std = np.nan
 
         # update covs (if any)
-        cdef incStat_cov cov
-        for c in self.covs:
-            cov = c
-            cov.update_cov(self.ID, v, t)
+        # cdef incStat_cov cov
+        # for c in self.covs:
+            # print("Alert!")
+        #     cov = c
+        #     cov.update_cov(self.ID, v, t)
 
     cdef processDecay(self, double timestamp):
         cdef double factor, timeDiff
@@ -335,7 +337,7 @@ cdef class incStat_cov:
 cdef class incStatDB:
     cdef double limit
     cdef double df_lambda
-    cdef dict HT
+    cdef public dict HT
 
     # default_lambda: use this as the lambda for all streams. If not specified, then you must supply a Lambda with every query.
     def __init__(self,double limit=np.Inf,double default_lambda=np.nan):
@@ -798,4 +800,238 @@ cdef class extrapolator:
             ym[i]*=y
 
         return sum(ym)
+
+
+# =======================================================================
+# =======================================================================
+# =======================================================================
+cdef class incStatDB2(incStatDB):
+
+    # cdef double limit
+    # cdef double df_lambda
+    # cdef dict HT
+    cdef public dict HT2
+
+    ## 2020.04修改-支持回退 ----
+    cdef public dict backup1
+    cdef public dict backup2
+    cdef public int roll_back
+    ## ---- 2020.04修改-支持回退 
+    
+    def __init__(self,double limit=np.Inf,double default_lambda=np.nan,roll_back=False):
+        super().__init__(limit,default_lambda)
+        self.HT2 = dict()
+
+        ## 2020.04修改-支持回退 ----
+        self.backup1 = dict()
+        self.backup2 = dict()
+        self.roll_back = roll_back
+        ## ---- 2020.04修改-支持回退 
+    
+    def register(self, str ID, double Lambda=1,double init_time=0,
+                int isTypeDiff=False, str dir='o'):
+        #Default Lambda?
+        Lambda = self.get_lambda(Lambda)
+
+        #Retrieve incStat
+        cdef str key
+        key = ID+"_"+str(Lambda)
+
+        cdef incStat incS
+        if dir == "o":
+            incS = self.HT.get(key)
+
+            if incS is None: #does not already exist
+                if len(self.HT) + 1 > self.limit:
+                    raise LookupError(
+                        'Adding Entry:\n' + key + '\nwould exceed incStatHT 1D limit of ' + str(
+                            self.limit) + '.\nObservation Rejected.')
+                incS = incStat(Lambda, ID, init_time, isTypeDiff)
+                self.HT[key] = incS #add new entry
+
+                if self.roll_back:
+                    # print(1)
+                    if not self.backup1.get(key):
+                        # print(2)
+                        # print("key",key)
+                        # print("self.backup1",self.backup1)
+                        self.backup1[key] = [-1,dict()]
+            else:
+                if self.roll_back:
+                    # print(3)
+                    if not self.backup1.get(key):
+                        # print(4)
+                        self.backup1[key] = [copy.copy(incS),dict()]
+
+        elif dir == 'i':
+            incS = self.HT2.get(key)
+
+            if incS is None: #does not already exist
+                if len(self.HT2) + 1 > self.limit:
+                    raise LookupError(
+                        'Adding Entry:\n' + key + '\nwould exceed incStatHT 1D limit of ' + str(
+                            self.limit) + '.\nObservation Rejected.')
+                incS = incStat(Lambda, ID, init_time, isTypeDiff)
+                self.HT2[key] = incS #add new entry
+
+                if self.roll_back:
+                    # print(5)
+                    if not self.backup2.get(key):
+                        # print(6)
+                        self.backup2[key] = [-1,dict()]
+            else:
+                if self.roll_back:
+                    # print(7)
+                    if not self.backup2.get(key):
+                        # print(8)
+                        self.backup2[key] = [copy.copy(incS),dict()]
+        else:
+            raise RuntimeError("Invalid Params: dir")
+        
+        ## 2020.04修改-支持回退 ---- 
+        ## ---- 2020.04修改-支持回退 
+        
+        return incS
+
+    def update_get_1D2D_Stats(self, str ID1, str ID2, double t1,double v1,double Lambda=1):  # weight, mean, std
+        
+        return self.update_get_2D_Stats(ID1,ID2,t1,v1,Lambda,level=2)
+    def update_get_2D_Stats(self, str ID1, str ID2,double t1,double v1,double Lambda=1, int level=1):  #level=  1:cov,pcc  2:radius,magnitude,cov,pcc
+        cdef incStat incS
+        incS = self.register(ID1,Lambda,t1,dir='o')
+        incS.insert(v1,t1)
+        
+        incS = self.register(ID2,Lambda,t1,dir='i')
+        incS.insert(v1,t1)
+
+        #retrieve/add cov tracker
+        cdef incStat_cov2 inc_cov
+        inc_cov = self.register_cov(ID1, ID2, Lambda,  t1)
+        # Update cov tracker
+        inc_cov.update_cov(ID1,v1,t1)
+        if level == 1:
+            return inc_cov.get_stats1()
+        else:
+            return inc_cov.get_stats2()
+
+    def register_cov(self,str ID1, str ID2, double Lambda=1, double init_time=0, int isTypeDiff=False):
+        #Default Lambda?
+        Lambda = self.get_lambda(Lambda)
+
+        # Lookup both streams
+        cdef incStat incS1
+        cdef incStat incS2
+        incS1 = self.register(ID1,Lambda,init_time,isTypeDiff, dir='o')
+        incS2 = self.register(ID2,Lambda,init_time,isTypeDiff, dir='i')
+
+        # #check for pre-exiting link
+        # for cov in incS1.covs:
+        #     if cov.isRelated(ID2):
+        #         return cov #there is a pre-exiting link
+
+        # # Link incStats
+        # inc_cov = incStat_cov2(incS1,incS2,init_time)
+        # incS1.covs.append(inc_cov)
+        # # incS2.covs.append(inc_cov)
+        # return inc_cov
+
+        key = ID1+"_"+str(Lambda)
+
+        if incS1.Covs.has_key(ID2):
+
+            if self.roll_back:
+                # print(9)
+                if not self.backup1[key][1].get(ID2):
+                    # print(10)
+                    self.backup1[key][1][ID2] = copy.copy(incS1.Covs[ID2])
+
+            return incS1.Covs[ID2]
+        else:
+            inc_cov = incStat_cov2(incS1,incS2,init_time)
+            incS1.Covs[ID2] = inc_cov
+            
+            if self.roll_back:
+                # print(11)
+                # print("q",ID1,ID2,key)
+                # print("w",self.backup1)
+                # print("e",self.backup1[key][1])
+                # print("r",self.backup1[key][1].get(ID2))
+                if not self.backup1[key][1].get(ID2):
+                    # print(12)
+                    self.backup1[key][1][ID2] = -1
+                # print(13)
+            return inc_cov
+
+    def backup(self):
+        if self.roll_back:
+            for k in self.backup1:
+
+                for kk in self.backup1[k][1]:
+                    if self.backup1[k][1][kk] == -1:
+                        del self.HT[k].Covs[kk]
+                    else:
+                        self.HT[k].Covs[kk] = self.backup1[k][1][kk]
+                
+                if self.backup1[k][0] == -1:
+                    del self.HT[k]
+                else:
+                    self.HT[k] = self.backup1[k][0]
+
+            for k in self.backup2:
+
+                for kk in self.backup2[k][1]:
+                    if self.backup2[k][1][kk] == -1:
+                        del self.HT2[k].Covs[kk]
+                    else:
+                        self.HT2[k].Covs[kk] = self.backup2[k][1][kk]
+                
+                if self.backup2[k][0] == -1:
+                    del self.HT2[k]
+                else:
+                    self.HT2[k] = self.backup2[k][0]
+
+            self.backup1 = dict()
+            self.backup2 = dict()
+            # self.roll_back = False
+                    
+
+
+cdef class incStat_cov2(incStat_cov):
+
+    def __init__(self, incStat incS1,incStat incS2, double init_time = 0):
+        # store references tot he streams' incStats
+        self.incS1 = incS1
+        self.incS2 = incS2
+
+        # init sum product residuals
+        self.CF3 = 0 # sum of residule products (A-uA)(B-uB)
+        self.w3 = 1e-20
+        self.lastTimestamp_cf3 = init_time
+    
+    cdef update_cov(self, str ID, double v, double t):  # it is assumes that incStat "ID" has ALREADY been updated with (t,v) [this si performed automatically in method incStat.insert()]
+        # find incStat
+        # cdef int inc
+        # if ID == self.incS1.ID:
+        #     inc = 0
+        # else:
+        #     inc = 1
+
+        # Decay residules
+        self.processDecay(t)
+
+        # # Update extrapolator for current stream AND
+        # # Extrapolate other stream AND
+        # # Compute and update residule
+        # cdef double v_other
+        # if inc == 0:
+        #     self.ex1.insert(t,v)
+        #     v_other = self.ex2.predict(t)
+        #     self.CF3 += (v - self.incS1.mean()) * (v_other - self.incS2.mean())
+        # else:
+        #     self.ex2.insert(t,v)
+        #     v_other = self.ex1.predict(t)
+        #     self.CF3 += (v - self.incS2.mean()) * (v_other - self.incS1.mean())
+
+        self.CF3 += (v - self.incS1.mean()) * (v - self.incS2.mean())
+        self.w3 += 1
 

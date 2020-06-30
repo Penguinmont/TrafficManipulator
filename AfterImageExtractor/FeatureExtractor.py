@@ -2,11 +2,11 @@
 import os
 import subprocess
 print("Importing AfterImage Cython Library")
-if not os.path.isfile("./AfExtractor/AfterImage.c"): #has not yet been compiled, so try to do so...
-    cmd = "python setup.py build_ext --inplace"
-    subprocess.call(cmd,shell=True)
+# if not os.path.isfile("./AfterImage.c"): #has not yet been compiled, so try to do so...
+#     cmd = "python ./setup.py build_ext --inplace"
+#     subprocess.call(cmd,shell=True)
 #Import dependencies
-import AfExtractor.netStat as ns
+import AfterImageExtractor.netStat as ns
 import csv
 import numpy as np
 print("Importing Scapy Library")
@@ -20,21 +20,21 @@ import subprocess
 # If wireshark is installed (tshark) it is used to parse (it's faster), otherwise, scapy is used (much slower).
 # If wireshark is used then a tsv file (parsed version of the pcap) will be made -which you can use as your input next time
 class FE:
-    def __init__(self,file_path,limit=np.inf):
-        self.path = file_path
-        self.limit = limit
-        self.parse_type = None #unknown
+    def __init__(self,scapyin,limit=np.inf,roll_back=False):  ## file_path
+        self.path = None ## file_path
+        # self.limit = limit
+        self.parse_type = "scapy" # None #unknown
         self.curPacketIndx = 0
         self.tsvin = None #used for parsing TSV file
-        self.scapyin = None #used for parsing pcap with scapy
-
+        self.scapyin = scapyin # None #used for parsing pcap with scapy
+        self.limit = len(self.scapyin)
         ### Prep pcap ##
-        self.__prep__()
+        # self.__prep__()
 
         ### Prep Feature extractor (AfterImage) ###
         maxHost = 100000000000
         maxSess = 100000000000
-        self.nstat = ns.netStat(np.nan, maxHost, maxSess)
+        self.nstat = ns.netStat(np.nan, maxHost, maxSess,roll_back)
 
     def _get_tshark_path(self):
         if platform.system() == 'Windows':

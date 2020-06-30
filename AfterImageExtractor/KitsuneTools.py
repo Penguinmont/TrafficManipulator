@@ -39,6 +39,12 @@ def RunFE(
             print("@RunFE: Features are saved in .csv file!")
     return features,all_features
 
+def safelyCopyNstat(ns,roll_back_flag):   # 2020.04
+    ns.HT_jit.roll_back = roll_back_flag
+    ns.HT_MI.roll_back = roll_back_flag
+    ns.HT_H.roll_back = roll_back_flag
+    ns.HT_Hp.roll_back = roll_back_flag
+    return ns
 
 # def RunKN(
 #             K,

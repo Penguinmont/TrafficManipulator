@@ -1,4 +1,4 @@
-from AfExtractor.FeatureExtractor import *
+from AfterImageExtractor.FeatureExtractor import *
 
 STOP_FLAG = -10086.12345
 # MIT License
@@ -26,19 +26,22 @@ STOP_FLAG = -10086.12345
 ''' 修改标注 '''
 class Kitsune:
     #def __init__(self,file_path,limit,max_autoencoder_size=10,FM_grace_period=None,AD_grace_period=10000,learning_rate=0.1,hidden_ratio=0.75,):
-    def __init__(self, file_path, limit):
+    def __init__(self, file_path, limit, roll_back=False):
         #init packet feature extractor (AfterImage)
-        self.FE = FE(file_path,limit)
-
+        self.FE = FE(file_path,limit,roll_back)
+        self.roll_back = roll_back
 
     def proc_next_packet(self):
-        ''' 此时这个函数返回的是x，而不是RMSE '''
+
         # create feature vector
         x = self.FE.get_next_vector()
         if len(x) == 0:
+            if self.roll_back:
+                self.FE.nstat.RollBack()
             return [STOP_FLAG,STOP_FLAG] #Error or no packets left
-        ''' 修改标注 '''
+
         return x
+
     def change_path(self,new_path):
         self.FE.path = new_path
 
