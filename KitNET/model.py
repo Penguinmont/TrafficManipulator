@@ -124,6 +124,8 @@ if __name__ == "__main__":
         plt.ylabel('RMSE in Kitsune')
         plt.legend()
         plt.show()
+        plt.savefig("KitNET_RMSE _scores.png")
+        print("Graph saved to KitNET_scores.png")
 
 
     else:

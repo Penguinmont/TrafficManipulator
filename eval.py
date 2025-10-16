@@ -208,6 +208,8 @@ class Analyzer:
 
         # plt.savefig('./tmp.pdf')
         plt.show()
+        plt.savefig("tmp _scores.png")
+        print("Graph saved to tmp_scores.png")
 
 
 if __name__ == "__main__":

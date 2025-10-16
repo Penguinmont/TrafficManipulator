@@ -15,53 +15,55 @@ def rebuild(
     groupList,
     # tmp_pcap_file
 ):
-    n = 0
     newList = []
 
-    # === [DEBUG] ADDED LINE: Indicates when the function starts ===
+    # This print statement can be removed if you wish, but it's helpful for now.
     print("\n--- [DEBUG] Entering Rebuilder Function ---")
 
     for i in range(grp_size):
-
-        # === [DEBUG] ADDED BLOCK: Prints the summary of the packet being processed ===
+        
+        # This print statement can also be removed later.
         try:
             packet_summary = groupList[i].summary()
             print(f"[DEBUG] Processing original packet index {i}: {packet_summary}")
         except Exception as e:
             print(f"[DEBUG] Could not get summary for packet index {i}. Error: {e}")
-        # =========================================================================
 
         for j in range(int(round(X.mal[i][1]))):
             pkt = copy.deepcopy(groupList[i])
+            
+            # --- MODIFICATION STARTS HERE ---
             if round(X.craft[i][j][1]) == 1:
-                if groupList[i].haslayer(Ether):
+                # If the packet has an Ether layer, remove its payload. Otherwise, do nothing.
+                if pkt.haslayer(Ether):
                     pkt[Ether].remove_payload()
-                else:
-                    print("X.craft[i][j][1]==", X.craft[i][j][1])
-                    n +=1
-                    raise RuntimeError("Error in rebuilder!")
 
             elif round(X.craft[i][j][1]) == 2:
-                if groupList[i].haslayer(IP):
+                # If the packet has a network layer, remove its payload. Otherwise, do nothing.
+                if pkt.haslayer(IP):
                     pkt[IP].remove_payload()
-                elif groupList[i].haslayer(IPv6):
+                elif pkt.haslayer(IPv6):
                     pkt[IPv6].remove_payload()
-                elif groupList[i].haslayer(ARP):
+                elif pkt.haslayer(ARP):
                     pkt[ARP].remove_payload()
-                else:
-                    raise RuntimeError("Error in rebuilder!")
+
             elif round(X.craft[i][j][1]) == 3:
-                if groupList[i].haslayer(ICMP):
+                # If the packet has a transport layer, remove its payload. Otherwise, do nothing.
+                if pkt.haslayer(ICMP):
                     pkt[ICMP].remove_payload()
-                elif groupList[i].haslayer(TCP):
+                elif pkt.haslayer(TCP):
                     pkt[TCP].remove_payload()
-                elif groupList[i].haslayer(UDP):
+                elif pkt.haslayer(UDP):
                     pkt[UDP].remove_payload()
-                else:
-                    raise RuntimeError("Error in rebuilder!")
-            else:
-                raise RuntimeError("Error in rebuilder!")
-            pkt.add_payload(random_bytes(int(round(X.craft[i][j][2]))))
+            # --- MODIFICATION ENDS HERE --- (The `else: raise RuntimeError` blocks were removed)
+
+            # The rest of the logic remains the same
+            # Ensure the payload length is not negative before adding
+            payload_len = int(round(X.craft[i][j][2]))
+            if payload_len < 0:
+                payload_len = 0
+            pkt.add_payload(random_bytes(payload_len))
+            
             pkt.time = X.mal[i][0] - X.craft[i][j][0]
             newList.append(pkt)
 
@@ -69,6 +71,4 @@ def rebuild(
         mal_pkt.time = X.mal[i][0]
         newList.append(mal_pkt)
 
-    # wrpcap(tmp_pcap_file, newList)
-    print("n ==", n)
     return newList

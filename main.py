@@ -59,4 +59,4 @@ m.change_manipulator_params(grp_size=100,
 # tmp_pcap_file = "_crafted.pcap"
 # m.process(tmp_pcap_file, arg.sta_file, limit=20)
 
-m.process(arg.sta_file, limit=np.Inf, heuristic=False)
+m.process(arg.sta_file, limit=np.inf, heuristic=False)
